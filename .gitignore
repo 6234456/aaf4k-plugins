@@ -1,0 +1,12 @@
+.idea/*
+*.iml
+*.credentials
+credentials/*
+target/*
+*.xlsx
+*.xls
+*.xlsm
+*.class
+credentials.*
+*.jar
+*.pdf
