@@ -6,6 +6,7 @@ class CNLegalDocumentsTest {
 
     @Test
     fun search() {
-        CNLegalDocuments().search("上海大众", courtLevel = "中级")
+        //   CNLegalDocuments().search("上海大众", courtLevel = "中级")
+        CNLegalDocuments().search("上海大众", courtLevel = "基层")
     }
 }

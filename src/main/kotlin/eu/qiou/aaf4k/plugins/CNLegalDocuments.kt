@@ -37,7 +37,8 @@ class CNLegalDocuments {
     // courtLevel 基层 中级 高级 最高
     // tribunalLevel  一审 二审
     fun search(keyword: String = "", location: String? = null, category: String? = null, courtLevel: String? = null
-               , tribunalLevel: String? = null) {
+               , tribunalLevel: String? = null, toPage: Int = 1
+    ) {
         val webDriver = FirefoxDriver()
 
         val url = "http://wenshu.court.gov.cn/list/list/?sorttype=1&conditions=searchWord+QWJS+++全文检索:$keyword${
@@ -65,9 +66,11 @@ class CNLegalDocuments {
         webDriver.get(url)
 
         var cnt = 0
+
         // process the current page
-        fun f() {
-            fun reconnect() {
+        fun f(toPage: Int) {
+
+            fun reconnect(toPage: Int = 1) {
                 if (webDriver.windowHandles.size > 1)
                     return
 
@@ -77,18 +80,56 @@ class CNLegalDocuments {
                     captchaWarning = false
                 }
 
-                search(keyword, location, category, courtLevel, tribunalLevel)
+                search(keyword, location, category, courtLevel, tribunalLevel, toPage)
             }
 
             var v = listOf<WebElement>()
+            var currentPageNumber = 0
+
+            fun toPageLink(number: Int): Boolean {
+                if (currentPageNumber == number)
+                    return true
+
+                val pages = webDriver.findElementsByCssSelector("#pageNumber>*")
+                val lastPage = pages.findLast { """\d+""".toRegex().matches(it.text.trim()) }!!
+
+                // move forward only
+                if (lastPage.text.trim().toInt() < number) {
+                    if (webDriver.findElementsByCssSelector("#pageNumber .next").isEmpty()) return false
+
+                    lastPage.click()
+                    return toPageLink(number)
+                } else {
+                    pages.find { it.text.trim() == number.toString() }!!.click()
+                    return true
+                }
+            }
 
             // in case of blank page or captcha retry
             try {
+                // get current page number
+                webDriver.findElementsByCssSelector("#pageNumber .current")
+                    .find { """\d+""".toRegex().matches(it.text.trim()) }.let {
+                        if (it == null) reconnect()
+                        else {
+                            currentPageNumber = it.text.trim().toInt()
+                        }
+                    }
+
+                toPageLink(toPage).let {
+                    if (!it) {
+                        // reach the end
+                    } else {
+                        currentPageNumber = toPage
+                    }
+                }
+
                 v = webDriver.findElementsByCssSelector(".wstitle a")
+
             } catch (
                 e: Exception
             ) {
-                reconnect()
+                reconnect(toPage)
             }
 
             if (v.isEmpty()) {
@@ -99,16 +140,17 @@ class CNLegalDocuments {
                 }
 
                 if (t.contains("繁忙")) {
-                    reconnect()
+                    reconnect(toPage)
                 } else if (t.contains("无符合")) {
                     println("not found")
                 } else {
                     if (patience > cnt++) {
+                        // wait until the page fully loaded
                         Thread.sleep(800)
-                        f()
+                        f(toPage)
                     } else {
                         cnt = 0
-                        reconnect()
+                        reconnect(toPage)
                     }
                 }
             } else {
@@ -129,59 +171,64 @@ class CNLegalDocuments {
 
                 Thread.sleep(6800)
                 // loop through the tabs
-                val windows = webDriver.windowHandles.size
-                webDriver.windowHandles.drop(1).asReversed().forEachIndexed { index, s ->
+                var cnt = 0
+                val tolerance = 3
+                while (webDriver.windowHandles.size > 1 && cnt++ < tolerance) {
+                    val windows = webDriver.windowHandles.size
+                    webDriver.windowHandles.drop(1).asReversed().forEachIndexed { index, s ->
+                        //10 tabs, 0-9, 2000-0
+                        Thread.sleep(windows * 25 - (index * 20).toLong())
 
-                    //10 tabs, 0-9, 2000-0
-                    Thread.sleep(windows * 25 - (index * 20).toLong())
+                        webDriver.switchTo().window(s)
 
-                    webDriver.switchTo().window(s)
+                        // wait until the Url properly parsed by the browser
+                        if (!webDriver.currentUrl.contains("DocID="))
+                            return@forEachIndexed
 
-                    var cnt1 = 0
-                    // wait until the Url properly parsed by the browser
-                    while (!webDriver.currentUrl.contains("DocID=")) {
-                        if (cnt1++ < patience)
-                            Thread.sleep(800)
-                        else {
+
+                        val target = cases.find { it.title.startsWith(webDriver.title.take(20)) }.apply {
+                            if (this == null) {
+                                webDriver.close()
+                                return@forEachIndexed
+                            }
+                            this.url = truncateCoreURL(webDriver.currentUrl)
+                        }
+
+
+                        // #txtValidateCode  -> capchat
+                        if (webDriver.currentUrl.contains("VisitRemind")) {
+                            // handel
+                            captchaWarning = true
+                            webDriver.close()
                             return@forEachIndexed
                         }
 
-                    }
-
-                    val target = cases.find { it.title.startsWith(webDriver.title.take(20)) }.apply {
-                        if (this == null) {
-                            return@forEachIndexed
+                        target!!.content = try {
+                            webDriver.findElementById("Content").text
+                        } catch (e: Exception) {
+                            ""
                         }
-                        this.url = truncateCoreURL(webDriver.currentUrl)
+
+                        if (target.content.trim().length in 1..10)
+                            return@forEachIndexed
+
+                        webDriver.close()
+
                     }
-
-
-                    // #txtValidateCode  -> capchat
-                    if (webDriver.currentUrl.contains("VisitRemind")) {
-                        // handel
-                        captchaWarning = true
-                        return@forEachIndexed
-                    }
-
-                    target!!.content = try {
-                        webDriver.findElementById("Content").text
-                    } catch (e: Exception) {
-                        ""
-                    }
-                    webDriver.close()
-
                 }
-
 
                 cases.forEach {
                     println(it)
                 }
-                //   webDriver.close()
+
+                webDriver.switchTo().window(webDriver.windowHandles.first())
             }
         }
-        f()
+        f(toPage)
 
+        webDriver.close()
 
+        search(keyword, location, category, courtLevel, tribunalLevel, toPage + 1)
     }
 
     private fun mappingToDocuments(webElement: WebElement): LegalDocument {
