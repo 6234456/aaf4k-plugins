@@ -3,6 +3,7 @@ package eu.qiou.aaf4k.plugins
 import eu.qiou.aaf4k.util.time.TimeSpan
 import eu.qiou.aaf4k.util.time.times
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.Test

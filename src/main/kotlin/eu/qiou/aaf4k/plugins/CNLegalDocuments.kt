@@ -119,7 +119,7 @@ class CNLegalDocuments {
 
             // in case of blank page or captcha retry
             try {
-                delay(8000)
+                delay(10000)
 
                 if (webDriver.currentUrl.contains("waf_verify")) {
                     captchaWarning = true
